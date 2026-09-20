@@ -15,6 +15,8 @@ import logging
 
 import pytest
 from git import Repo
+from git.exc import GitCommandError
+from git.objects.commit import Commit as GitCommit
 
 from pydriller import Git, ShallowRepositoryError
 
@@ -72,4 +74,23 @@ def test_complete_clone_is_not_affected(repos, caplog):
 
     assert [mod.filename for mod in modified_files] == ["file.txt"]
     assert not any("shallow clone" in record.message for record in caplog.records)
+    gr.clear()
+
+
+def test_other_git_errors_are_not_relabelled(repos, monkeypatch):
+    """A git failure in a complete clone must surface unchanged."""
+    source, _ = repos
+    gr = Git(str(source))
+    commit = gr.get_head()
+
+    def boom(*args, **kwargs):
+        raise GitCommandError(["git", "diff-tree"], 128, b"fatal: something else entirely")
+
+    monkeypatch.setattr(GitCommit, "diff", boom)
+
+    with pytest.raises(GitCommandError) as exc_info:
+        _ = commit.modified_files
+
+    assert not isinstance(exc_info.value, ShallowRepositoryError)
+    assert "something else entirely" in str(exc_info.value)
     gr.clear()

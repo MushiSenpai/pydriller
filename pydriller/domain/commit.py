@@ -37,22 +37,6 @@ from pydriller.domain.developer import Developer
 logger = logging.getLogger(__name__)
 
 
-class ShallowRepositoryError(Exception):
-    """Raised when a diff cannot be computed because the repository is a shallow clone."""
-
-
-def is_shallow(repo: Any) -> bool:
-    """
-    Return True if the given git.Repo is a shallow clone (i.e. its history was
-    truncated with --depth), meaning older commits have parents that are not
-    present locally.
-    """
-    try:
-        return repo.git.rev_parse("--is-shallow-repository").strip() == "true"
-    except Exception:  # pragma: no cover - very old git without --is-shallow-repository
-        return (Path(repo.git_dir) / "shallow").exists()
-
-
 class ModificationType(Enum):
     """
     Type of Modification. Can be ADD, COPY, RENAME, DELETE, MODIFY or UNKNOWN.
@@ -841,12 +825,13 @@ class Commit:
             except GitCommandError as gce:
                 # In a shallow clone the parent is listed but its object is absent,
                 # so git fails with a bare "exit code(128) ... bad object <sha>".
+                # Imported here because pydriller.git imports this module.
+                from pydriller.git import ShallowRepositoryError, is_shallow
+
                 if is_shallow(self._c_object.repo):
                     raise ShallowRepositoryError(
-                        f"Cannot compute the diff of commit {self.hash}: its parent "
-                        f"{self.parents[0]} is missing because {self.project_path} is a "
-                        f"shallow clone. Run 'git fetch --unshallow' (or set "
-                        f"fetch-depth: 0 in actions/checkout) to get the full history."
+                        f"Cannot compute the diff of commit {self.hash} because "
+                        f"{self.project_path} is a shallow clone"
                     ) from gce
                 raise
         elif len(self.parents) > 1:

@@ -24,10 +24,23 @@ from typing import List, Dict, Optional, Set, Generator
 from git import Repo, GitCommandError
 from git.objects import Commit as GitCommit
 
-from pydriller.domain.commit import Commit, ModificationType, ModifiedFile, is_shallow
+from pydriller.domain.commit import Commit, ModificationType, ModifiedFile
 from pydriller.utils.conf import Conf
 
 logger = logging.getLogger(__name__)
+
+
+class ShallowRepositoryError(Exception):
+    """Raised when a diff cannot be computed because the repository is a shallow clone."""
+
+
+def is_shallow(repo: Repo) -> bool:
+    """
+    Return True if the given git.Repo is a shallow clone (i.e. its history was
+    truncated with --depth), meaning older commits have parents that are not
+    present locally.
+    """
+    return repo.git.rev_parse("--is-shallow-repository").strip() == "true"
 
 
 class Git:
@@ -86,12 +99,6 @@ class Git:
     def _open_repository(self):
         self._repo = Repo(str(self.path))
         self._repo.config_writer().set_value("blame", "markUnblamableLines", "true").release()
-        if is_shallow(self._repo):
-            logger.warning(
-                f"{self.path} is a shallow clone: the parents of the oldest commits are "
-                f"missing, so their diffs cannot be computed. Run 'git fetch --unshallow' "
-                f"(or set fetch-depth: 0 in actions/checkout) if you need the full history."
-            )
         if self._conf.get("main_branch") is None:
             self._discover_main_branch(self._repo)
 
